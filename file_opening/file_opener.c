@@ -8,6 +8,17 @@ char LICENSE[] SEC("license") = "GPL";
 #define PREFIX_LEN 128
 
 // --------------------
+// Cgroup filter map
+// --------------------
+struct
+{
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 1024);
+    __type(key, __u64); // cgroup id
+    __type(value, __u8);
+} cgroup_filter SEC(".maps");
+
+// --------------------
 // Inode-based map
 // --------------------
 struct inode_key
@@ -61,6 +72,16 @@ static __always_inline int has_prefix(char *path, char *prefix)
 SEC("lsm/file_open")
 int BPF_PROG(block_file, struct file *file)
 {
+    // ---------- CGROUP CHECK ----------
+    u64 cgid = bpf_get_current_cgroup_id();
+    u8 *is_filtered = bpf_map_lookup_elem(&cgroup_filter, &cgid);
+
+    // Only proceed with blocking logic if the current cgroup is in the map
+    if (!is_filtered)
+    {
+        return 0;
+    }
+
     struct inode *inode = file->f_inode;
 
     // ---------- FAST PATH: inode ----------
@@ -72,8 +93,8 @@ int BPF_PROG(block_file, struct file *file)
     u8 *blocked = bpf_map_lookup_elem(&inode_blacklist, &key);
     if (blocked)
     {
-        bpf_printk("BLOCK (inode): dev=%llu ino=%llu\n", key.dev, key.ino);
-        return -1;
+        bpf_printk("BLOCK (inode): cgroup=%llu dev=%llu ino=%llu\n", cgid, key.dev, key.ino);
+        return -1; // EPERM
     }
 
     // ---------- FALLBACK: path ----------
@@ -91,8 +112,8 @@ int BPF_PROG(block_file, struct file *file)
 
         if (has_prefix(path, p->path))
         {
-            bpf_printk("BLOCK (prefix): %s\n", path);
-            return -1;
+            bpf_printk("BLOCK (prefix): cgroup=%llu %s\n", cgid, path);
+            return -1; // EPERM
         }
     }
 
