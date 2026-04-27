@@ -159,12 +159,9 @@ def map_ensure(path: str) -> int:
         log.info("Found existing pinned map at %s  fd=%d", path, fd)
         return fd
 
-    # bpf_obj_get sets errno; ENOENT means pin file doesn't exist yet
-    err = ctypes.get_errno()
-    if err != errno.ENOENT:
-        raise OSError(err, f"bpf_obj_get({path}) failed: {os.strerror(err)}")
+    # fd < 0 → map doesn't exist OR cannot be opened
+    log.info("bpf_obj_get failed — assuming map not present, creating new one...")
 
-    log.info("No pinned map found at %s — creating a new one...", path)
     _ensure_bpffs(path)
     fd = _bpf_map_create()
     _bpf_obj_pin(fd, path)
@@ -241,7 +238,7 @@ def _is_systemd_driver() -> bool:
     return _systemd_driver_cache
 
 
-def resolve_cgid(cid: str, retries: int = 10, delay: float = 0.2) -> Optional[int]:
+def resolve_cgid(cid: str, retries: int = 20, delay: float = 0.2) -> Optional[int]:
     """
     Resolve the cgroup ID for a container with retries.
     The cgroup directory may not exist immediately after the 'start' event.
@@ -270,6 +267,7 @@ class ContainerMap:
         self._store: dict[str, int] = {}   # cid → cgid
 
     def add(self, cid: str) -> bool:
+        log.info("Added is called")
         with self._lock:
             if cid in self._store:
                 return False
@@ -349,7 +347,7 @@ def event_loop(cmap: ContainerMap):
             if event.get("Type") != "container":
                 continue
 
-            cid    = event.get("id", "")
+            cid = event.get("id") or event.get("Actor", {}).get("ID")
             action = event.get("Action", "")
 
             if action == "start":

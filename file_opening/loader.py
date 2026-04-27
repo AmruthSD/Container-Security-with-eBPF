@@ -53,9 +53,9 @@ PINNED_PREFIX_PATH = b"/sys/fs/bpf/prefix_blacklist"
 PINNED_CGROUP_PATH = b"/sys/fs/bpf/cgroup_filter"
 
 # Data to Block
-PROTECTED_FILES = ["/etc/shadow"]
+PROTECTED_FILES = ["/etc/shadow","/home/amruth/Desktop/mini_project/Container-Security-with-eBPF/file_opening/protected.txt"]
 PREFIX_PATHS    = ["/root/"]
-CGROUP_IDS      = [1, 12345] # Example Cgroup IDs to filter
+CGROUP_IDS      = []
 PREFIX_LEN      = 128
 
 # ---------------------------
