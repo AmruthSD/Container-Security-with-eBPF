@@ -4,35 +4,38 @@
 
 char LICENSE[] SEC("license") = "GPL";
 
+#define MAX_ENTRIES 64
+
+struct inode_key
+{
+    u64 dev;
+    u64 ino;
+};
+
+struct
+{
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_ENTRIES);
+    __type(key, struct inode_key);
+    __type(value, u8);
+} inode_blacklist SEC(".maps");
+
 SEC("lsm/file_open")
 int BPF_PROG(block_file, struct file *file)
 {
-    char path[128];
+    struct inode *inode = file->f_inode;
 
-    // Get full resolved path
-    int ret = bpf_d_path(&file->f_path, path, sizeof(path));
-    if (ret < 0)
-        return 0;
+    struct inode_key key = {
+        .ino = inode->i_ino,
+        .dev = inode->i_sb->s_dev};
 
-    char target[] = "/home/amruth/Desktop/mini_project/Container-Security-with-eBPF/file_opening/protected.txt";
+    u8 *blocked = bpf_map_lookup_elem(&inode_blacklist, &key);
 
-// Compare character-by-character (verifier-safe)
-#pragma unroll
-    for (int i = 0; i < sizeof(target); i++)
+    if (blocked)
     {
-        if (target[i] == '\0')
-            break;
-
-        if (path[i] != target[i])
-            return 0; // not a match
+        bpf_printk("Blocked inode: dev=%llu ino=%llu\n", key.dev, key.ino);
+        return -1;
     }
 
-    // Ensure exact match (avoid "/etc/shadow123")
-    if (path[sizeof(target) - 1] == '\0')
-    {
-        bpf_printk("Blocked access to /etc/shadow\n");
-        return -1; // deny
-    }
-
-    return 0; // allow
+    return 0;
 }
