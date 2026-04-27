@@ -2,7 +2,7 @@ from ctypes import *
 import signal
 import sys
 
-libbpf = CDLL("libbpf.so.0")
+libbpf = CDLL("libbpf.so.1")
 
 # ---- libbpf function prototypes ----
 libbpf.bpf_object__open_file.argtypes = [c_char_p, c_void_p]

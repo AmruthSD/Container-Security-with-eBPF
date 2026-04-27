@@ -5,7 +5,7 @@
 
 #define MAX_BUF 80
 
-#define HOST_CGROUP_ID 1
+#define HOST_CGROUP_ID 10007
 
 struct trace_event_raw_sys_enter {
     long unused;
