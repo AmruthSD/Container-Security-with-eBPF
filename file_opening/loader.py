@@ -4,7 +4,7 @@ import struct
 import signal
 import sys
 
-libbpf = CDLL("libbpf.so.0")
+libbpf = CDLL("libbpf.so.1")
 
 # ---------------------------
 # Function prototypes

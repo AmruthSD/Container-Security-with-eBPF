@@ -4,7 +4,7 @@
 
 char LICENSE[] SEC("license") = "GPL";
 
-#define MAX_ENTRIES 64
+#define MAX_ENTRIES 8
 #define PREFIX_LEN 128
 
 // --------------------
@@ -45,7 +45,6 @@ struct
 // --------------------
 static __always_inline int has_prefix(char *path, char *prefix)
 {
-#pragma unroll
     for (int i = 0; i < PREFIX_LEN; i++)
     {
         if (prefix[i] == '\0')
@@ -83,7 +82,6 @@ int BPF_PROG(block_file, struct file *file)
     if (ret < 0)
         return 0;
 
-#pragma unroll
     for (int i = 0; i < MAX_ENTRIES; i++)
     {
         u32 k = i;
