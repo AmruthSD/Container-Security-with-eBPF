@@ -7,7 +7,6 @@ char LICENSE[] SEC("license") = "GPL";
 SEC("lsm/file_open")
 int BPF_PROG(block_file, struct file *file)
 {
-    bpf_printk("LSM file_open triggered\n");
     char path[128];
 
     // Get full resolved path
@@ -15,8 +14,7 @@ int BPF_PROG(block_file, struct file *file)
     if (ret < 0)
         return 0;
 
-    char target[] = "/etc/shadow";
-    bpf_printk("path = %s target=%s\n", path, target);
+    char target[] = "/home/amruth/Desktop/mini_project/Container-Security-with-eBPF/file_opening/protected.txt";
 
 // Compare character-by-character (verifier-safe)
 #pragma unroll

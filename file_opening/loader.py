@@ -2,7 +2,7 @@ from ctypes import *
 import signal
 import sys
 
-libbpf = CDLL("libbpf.so.0")
+libbpf = CDLL("libbpf.so.1")
 
 # ---- libbpf function prototypes ----
 libbpf.bpf_object__open_file.argtypes = [c_char_p, c_void_p]
@@ -33,10 +33,10 @@ prog = libbpf.bpf_object__find_program_by_name(obj, b"block_file")
 if not prog:
     raise RuntimeError("BPF program not found (check function name)")
 
-# ---- attach (optional but safe) ----
-link = libbpf.bpf_program__attach(prog)
+link = libbpf.bpf_program__attach_lsm(prog)
 if not link:
-    raise RuntimeError("Failed to attach BPF program")
+    err = get_errno()
+    raise RuntimeError(f"Failed to attach BPF program, errno={err} ({os.strerror(err)})")
 
 print("LSM program loaded (file_open hook active). Ctrl+C to exit.")
 

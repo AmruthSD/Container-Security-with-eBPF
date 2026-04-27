@@ -1,5 +1,5 @@
 CC=clang
-CFLAGS=-O2 -g -Wall -target bpf -D__TARGET_ARCH_x86 -I .
+CFLAGS=-O2 -g -Wall -target bpf -D__TARGET_ARCH_x86 -I ./
 
 # Prefer pkg-config for portability
 LIBBPF_CFLAGS=$(shell pkg-config --cflags libbpf 2>/dev/null)
