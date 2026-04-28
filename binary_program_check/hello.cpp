@@ -1,40 +1,33 @@
-#include <bits/stdc++.h>
+#include <iostream>
 #include <sys/wait.h>
 #include <unistd.h>
 
-int main() {
-  std::cout << "Hello from container" << std::endl;
-  std::cout << "PID: " << getpid() << std::endl;
-
-  while (true) {
-    std::cout << "\n[+] Trying to exec /bin/ls (should be allowed or learned)"
-              << std::endl;
-
-    pid_t pid = fork();
-    if (pid == 0) {
-      execl("/bin/ls", "ls", NULL);
-      perror("exec /bin/ls failed");
-      _exit(1);
-    } else {
-      waitpid(pid, nullptr, 0);
-    }
-
-    sleep(2);
-
-    std::cout << "\n[+] Trying to exec /bin/bash (good candidate for blocking)"
-              << std::endl;
-
-    pid = fork();
-    if (pid == 0) {
-      execl("/bin/bash", "bash", "-c", "echo inside bash", NULL);
-      perror("exec /bin/bash failed");
-      _exit(1);
-    } else {
-      waitpid(pid, nullptr, 0);
-    }
-
-    sleep(5);
+void run(const char *path) {
+  pid_t pid = fork();
+  if (pid == 0) {
+    execl(path, path, NULL);
+    perror("exec failed");
+    _exit(1);
+  } else {
+    waitpid(pid, nullptr, 0);
   }
+}
 
+int main() {
+  std::cout << "[hello] PID: " << getpid() << std::endl;
+
+  std::cout << "[hello] Running test1 (should be learned)" << std::endl;
+  run("/test1");
+
+  std::cout << "[hello] Sleeping to allow learning phase..." << std::endl;
+  sleep(40); // must be > LEARN_WINDOW + GRACE in your eBPF
+
+  std::cout << "[hello] Running test1 again (should be allowed)" << std::endl;
+  run("/test1");
+
+  std::cout << "[hello] Running test2 (should be BLOCKED)" << std::endl;
+  run("/test2");
+
+  std::cout << "[hello] Done" << std::endl;
   return 0;
 }
