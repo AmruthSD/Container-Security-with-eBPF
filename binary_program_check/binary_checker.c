@@ -8,8 +8,8 @@ char LICENSE[] SEC("license") = "GPL";
 #define STATE_STABLE 1
 #define STATE_ENFORCING 2
 
-#define LEARN_WINDOW_NS (30ULL * 1000000000) // 30s
-#define GRACE_WINDOW_NS (30ULL * 1000000000) // 30s
+#define LEARN_WINDOW_NS (3ULL * 1000000000) // 30s
+#define GRACE_WINDOW_NS (3ULL * 1000000000) // 30s
 
 struct
 {
@@ -64,11 +64,10 @@ int BPF_PROG(exec_control, struct linux_binprm *bprm)
     if (!enabled)
         return 0;
 
-    bpf_printk("Found a container");
+    bpf_printk("Found a container with cgid %llu",cgid);
     char filename[256];
     bpf_probe_read_str(filename, sizeof(filename), bprm->filename);
-
-    bpf_printk("cgid=%llu exec file=%s\n", cgid, filename);
+    bpf_printk("exec file =%s",filename);
 
     // get file + inode
     struct file *file = bprm->file;
@@ -103,39 +102,38 @@ int BPF_PROG(exec_control, struct linux_binprm *bprm)
     // check if this exec is already known
     __u8 *allowed = bpf_map_lookup_elem(&allow_map, &key);
 
-    if (!allowed)
-    {
-        // new binary observed → learn it
-        __u8 one = 1;
-        bpf_map_update_elem(&allow_map, &key, &one, BPF_ANY);
-
-        st->last_new_exec_ns = now;
+    if(allowed){
+        bpf_printk("Already allowed %s",filename);
+        return 0;
     }
 
     // compute time since last new exec
     __u64 delta = now - st->last_new_exec_ns;
-
+    __u8 one = 1;
     // state transitions (simple version)
     if (delta < LEARN_WINDOW_NS)
     {
         st->state = STATE_LEARNING;
+        bpf_printk("State learning");
+        bpf_map_update_elem(&allow_map,&key,&one,BPF_ANY);
+        st->last_new_exec_ns = now;
+        return 0;
     }
     else if (delta < (LEARN_WINDOW_NS + GRACE_WINDOW_NS))
     {
         st->state = STATE_STABLE;
+
+        bpf_printk("State stable");
+        bpf_map_update_elem(&allow_map,&key,&one,BPF_ANY);
+        st->last_new_exec_ns = now;
+        return 0;
     }
     else
     {
         st->state = STATE_ENFORCING;
-    }
 
-    // enforcement
-    if (st->state == STATE_ENFORCING)
-    {
-        if (!allowed)
-        {
-            return -1; // deny
-        }
+        bpf_printk("State enforce");
+        return -1;
     }
 
     return 0;
