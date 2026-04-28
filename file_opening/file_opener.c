@@ -82,6 +82,8 @@ int BPF_PROG(block_file, struct file *file)
         return 0;
     }
 
+    bpf_printk("Found a container with cgid=%llu",cgid);
+
     struct inode *inode = file->f_inode;
 
     // ---------- FAST PATH: inode ----------
@@ -104,18 +106,26 @@ int BPF_PROG(block_file, struct file *file)
         return 0;
 
     for (int i = 0; i < MAX_ENTRIES; i++)
-    {
-        u32 k = i;
-        struct prefix *p = bpf_map_lookup_elem(&prefix_blacklist, &k);
-        if (!p)
-            continue;
+{
+    u32 k = i;
+    struct prefix *p = bpf_map_lookup_elem(&prefix_blacklist, &k);
+    if (!p)
+        continue;
 
-        if (has_prefix(path, p->path))
-        {
-            bpf_printk("BLOCK (prefix): cgroup=%llu %s\n", cgid, path);
-            return -1; // EPERM
-        }
+    if (p->path[0] == '\0')
+        continue;
+
+    if (has_prefix(path, p->path))
+    {
+        char prefix_buf[64];
+        __builtin_memcpy(prefix_buf, p->path, sizeof(prefix_buf));
+
+        bpf_printk("BLOCK prefix: cgid=%llu prefix=%s\n", cgid, prefix_buf);
+        bpf_printk("BLOCK (prefix): cgroup=%llu %s\n", cgid, path);
+
+        return -1; // EPERM
     }
+}
 
     return 0;
 }

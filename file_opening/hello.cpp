@@ -8,7 +8,18 @@ int main(){
     std::cout << "Sleeping for 5 seconds..." << std::endl;
     sleep(5);
 
-    std::ifstream file("/home/amruth/Desktop/mini_project/Container-Security-with-eBPF/file_opening/protected.txt");
+    std::ifstream file1("/unprotected.txt");
+    if (!file1) {
+        std::cerr << "Failed to open /etc/shadow (permission denied?)" << std::endl;
+        return 1;
+    }
+
+    std::string line1;
+    while (std::getline(file1, line1)) {
+        std::cout << line1 << std::endl;
+    }
+
+    std::ifstream file("/protected.txt");
     if (!file) {
         std::cerr << "Failed to open /etc/shadow (permission denied?)" << std::endl;
         return 1;

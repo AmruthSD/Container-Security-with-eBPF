@@ -172,13 +172,42 @@ def map_insert(fd: int, cgid: int) -> bool:
     key   = struct.pack("Q", cgid)          # u64 little-endian
     value = struct.pack("B", 1)             # u8 — adjust to your map value type
     ret   = libbpf.bpf_map_update_elem(fd, key, value, MAP_UPDATE_ANY)
+    print("Output after insert")
+    dump_map(fd)
     return ret == 0
 
 
 def map_delete(fd: int, cgid: int) -> bool:
     key = struct.pack("Q", cgid)
     ret = libbpf.bpf_map_delete_elem(fd, key)
+    print("Output after delete")
+    dump_map(fd)
     return ret == 0
+
+def dump_map(fd: int):
+    key_size = 8      # u64
+    value_size = 1    # u8 (change if needed)
+
+    key = ctypes.create_string_buffer(key_size)
+    next_key = ctypes.create_string_buffer(key_size)
+    value = ctypes.create_string_buffer(value_size)
+
+    # First call: pass NULL to get first key
+    ret = libbpf.bpf_map_get_next_key(fd, None, next_key)
+
+    while ret == 0:
+        # lookup value
+        ret_lookup = libbpf.bpf_map_lookup_elem(fd, next_key, value)
+        if ret_lookup == 0:
+            k = struct.unpack("Q", next_key.raw)[0]
+            v = struct.unpack("B", value.raw)[0]
+            print(f"key={k}, value={v}")
+        else:
+            print("lookup failed")
+
+        # move to next key
+        key.raw = next_key.raw
+        ret = libbpf.bpf_map_get_next_key(fd, key, next_key)
 
 # ---------------------------------------------------------------------------
 # Cgroup ID resolution
@@ -333,7 +362,6 @@ def event_loop(cmap: ContainerMap):
     cmd  = ["docker", "events", "--format", "{{json .}}"]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
     log.info("Listening for Docker events (pid=%d)…", proc.pid)
-
     try:
         for line in proc.stdout:
             line = line.strip()

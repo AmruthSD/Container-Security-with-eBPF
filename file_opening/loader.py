@@ -3,8 +3,11 @@ import os
 import struct
 import signal
 import sys
+import ctypes
 
+# ---------------------------
 # Load libbpf
+# ---------------------------
 libbpf = CDLL("libbpf.so.1")
 
 # ---------------------------
@@ -34,7 +37,17 @@ libbpf.bpf_obj_get.restype = c_int
 libbpf.bpf_map_update_elem.argtypes = [c_int, c_void_p, c_void_p, c_ulonglong]
 libbpf.bpf_map_update_elem.restype = c_int
 
+libbpf.bpf_map_lookup_elem.argtypes = [c_int, c_void_p, c_void_p]
+libbpf.bpf_map_lookup_elem.restype = c_int
+
+libbpf.bpf_map_get_next_key.argtypes = [c_int, c_void_p, c_void_p]
+libbpf.bpf_map_get_next_key.restype = c_int
+
 libbpf.bpf_link__destroy.argtypes = [c_void_p]
+
+# ⭐ CRITICAL ADDITION
+libbpf.bpf_map__set_pin_path.argtypes = [c_void_p, c_char_p]
+libbpf.bpf_map__set_pin_path.restype = c_int
 
 # ---------------------------
 # Config
@@ -42,29 +55,49 @@ libbpf.bpf_link__destroy.argtypes = [c_void_p]
 BPF_OBJ_FILE = b"file_opener.o"
 PROGRAM_NAME = b"block_file"
 
-# Map Names (Must match C code)
 INODE_MAP    = b"inode_blacklist"
 PREFIX_MAP   = b"prefix_blacklist"
 CGROUP_MAP   = b"cgroup_filter"
 
-# Pinned Paths (If applicable)
 PINNED_INODE_PATH  = b"/sys/fs/bpf/inode_blacklist"
 PINNED_PREFIX_PATH = b"/sys/fs/bpf/prefix_blacklist"
 PINNED_CGROUP_PATH = b"/sys/fs/bpf/cgroup_filter"
 
-# Data to Block
-PROTECTED_FILES = ["/etc/shadow","/home/amruth/Desktop/mini_project/Container-Security-with-eBPF/file_opening/protected.txt"]
-PREFIX_PATHS    = ["/root/"]
-CGROUP_IDS      = []
-PREFIX_LEN      = 128
+PROTECTED_FILES = [
+    "/etc/shadow",
+    "/home/amruth/Desktop/mini_project/Container-Security-with-eBPF/file_opening/protected.txt"
+]
+
+PREFIX_PATHS = ["/root/","/protected.txt"]
+CGROUP_IDS   = []  # fill with inode-based cgroup IDs
+PREFIX_LEN   = 128
 
 # ---------------------------
-# Open + load BPF
+# Open BPF object
 # ---------------------------
 obj = libbpf.bpf_object__open_file(BPF_OBJ_FILE, None)
 if not obj:
     raise RuntimeError("Failed to open BPF object")
 
+# ---------------------------
+# 🔥 Bind maps BEFORE load
+# ---------------------------
+def reuse_map(obj, map_name, pinned_path):
+    map_ptr = libbpf.bpf_object__find_map_by_name(obj, map_name)
+    if not map_ptr:
+        raise RuntimeError(f"Map {map_name.decode()} not found")
+
+    res = libbpf.bpf_map__set_pin_path(map_ptr, pinned_path)
+    if res != 0:
+        raise RuntimeError(f"Failed to bind {map_name.decode()} to pinned path")
+
+reuse_map(obj, INODE_MAP, PINNED_INODE_PATH)
+reuse_map(obj, PREFIX_MAP, PINNED_PREFIX_PATH)
+reuse_map(obj, CGROUP_MAP, PINNED_CGROUP_PATH)
+
+# ---------------------------
+# Load BPF object
+# ---------------------------
 if libbpf.bpf_object__load(obj) != 0:
     raise RuntimeError("Failed to load BPF object")
 
@@ -78,68 +111,85 @@ if not prog:
 link = libbpf.bpf_program__attach(prog)
 if not link:
     raise RuntimeError("Attach failed")
+
 print("[+] LSM program attached")
 
 # ---------------------------
-# Helper to get FD (Pinned or Object)
+# Get map FD (now guaranteed same map)
 # ---------------------------
-def get_map_fd(pinned_path, map_name):
+def get_map_fd(pinned_path):
     fd = libbpf.bpf_obj_get(pinned_path)
     if fd < 0:
-        print(f"[-] Pinned {map_name.decode()} not found, using object map...")
-        map_ptr = libbpf.bpf_object__find_map_by_name(obj, map_name)
-        fd = libbpf.bpf_map__fd(map_ptr)
+        raise RuntimeError(f"Failed to open pinned map {pinned_path.decode()}")
     return fd
 
-inode_fd  = get_map_fd(PINNED_INODE_PATH, INODE_MAP)
-prefix_fd = get_map_fd(PINNED_PREFIX_PATH, PREFIX_MAP)
-cgroup_fd = get_map_fd(PINNED_CGROUP_PATH, CGROUP_MAP)
-
-if any(fd < 0 for fd in [inode_fd, prefix_fd, cgroup_fd]):
-    raise RuntimeError("Failed to obtain map file descriptors")
+inode_fd  = get_map_fd(PINNED_INODE_PATH)
+prefix_fd = get_map_fd(PINNED_PREFIX_PATH)
+cgroup_fd = get_map_fd(PINNED_CGROUP_PATH)
 
 # ---------------------------
-# Populate Inode Map
+# Dump cgroup map (debug)
+# ---------------------------
+def dump_map(fd: int):
+    key = ctypes.create_string_buffer(8)
+    next_key = ctypes.create_string_buffer(8)
+    value = ctypes.create_string_buffer(1)
+
+    ret = libbpf.bpf_map_get_next_key(fd, None, next_key)
+
+    while ret == 0:
+        if libbpf.bpf_map_lookup_elem(fd, next_key, value) == 0:
+            k = struct.unpack("<Q", next_key.raw)[0]
+            v = struct.unpack("<B", value.raw)[0]
+            print(f"[MAP] key={k}, value={v}")
+
+        key.raw = next_key.raw
+        ret = libbpf.bpf_map_get_next_key(fd, key, next_key)
+
+dump_map(cgroup_fd)
+
+# ---------------------------
+# Populate inode map
 # ---------------------------
 for path in PROTECTED_FILES:
     try:
         st = os.stat(path)
-        key = struct.pack("QQ", st.st_dev, st.st_ino)
-        value = struct.pack("B", 1)
+        key = struct.pack("<QQ", st.st_dev, st.st_ino)
+        value = struct.pack("<B", 1)
         libbpf.bpf_map_update_elem(inode_fd, key, value, 0)
         print(f"[+] Inode rule: {path}")
     except FileNotFoundError:
         print(f"[!] File not found: {path}")
 
 # ---------------------------
-# Populate Prefix Map
+# Populate prefix map
 # ---------------------------
 for i, path in enumerate(PREFIX_PATHS):
-    key = struct.pack("I", i)
+    key = struct.pack("<I", i)
     buf = path.encode()[:PREFIX_LEN - 1].ljust(PREFIX_LEN, b"\x00")
     libbpf.bpf_map_update_elem(prefix_fd, key, buf, 0)
     print(f"[+] Prefix rule: {path}")
 
 # ---------------------------
-# Populate Cgroup Filter Map
+# Populate cgroup map
 # ---------------------------
 for cgid in CGROUP_IDS:
-    # Key is __u64 (Q), Value is __u8 (B)
-    key = struct.pack("Q", cgid)
-    value = struct.pack("B", 1)
+    key = struct.pack("<Q", cgid)
+    value = struct.pack("<B", 1)
     res = libbpf.bpf_map_update_elem(cgroup_fd, key, value, 0)
+
     if res == 0:
-        print(f"[+] Cgroup filter added: ID {cgid}")
+        print(f"[+] Cgroup filter added: {cgid}")
     else:
-        print(f"[!] Failed to add cgroup ID {cgid}")
+        print(f"[!] Failed to add cgroup {cgid}")
 
 print("[+] All maps populated successfully")
 
 # ---------------------------
-# Keep alive
+# Cleanup handler
 # ---------------------------
 def cleanup(sig, frame):
-    print("\n[+] Detaching and exiting...")
+    print("\n[+] Detaching...")
     if link:
         libbpf.bpf_link__destroy(link)
     sys.exit(0)

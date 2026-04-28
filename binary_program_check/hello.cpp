@@ -20,7 +20,7 @@ int main() {
   run("/test1");
 
   std::cout << "[hello] Sleeping to allow learning phase..." << std::endl;
-  sleep(40); // must be > LEARN_WINDOW + GRACE in your eBPF
+  sleep(2); // must be > LEARN_WINDOW + GRACE in your eBPF
 
   std::cout << "[hello] Running test1 again (should be allowed)" << std::endl;
   run("/test1");

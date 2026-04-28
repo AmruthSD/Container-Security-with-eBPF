@@ -58,10 +58,17 @@ int BPF_PROG(exec_control, struct linux_binprm *bprm)
 {
     __u64 cgid = bpf_get_current_cgroup_id();
 
+
     // check if this cgroup is monitored
     __u8 *enabled = bpf_map_lookup_elem(&cgroup_filter, &cgid);
     if (!enabled)
         return 0;
+
+    bpf_printk("Found a container");
+    char filename[256];
+    bpf_probe_read_str(filename, sizeof(filename), bprm->filename);
+
+    bpf_printk("cgid=%llu exec file=%s\n", cgid, filename);
 
     // get file + inode
     struct file *file = bprm->file;
