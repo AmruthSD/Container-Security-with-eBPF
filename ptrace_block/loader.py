@@ -93,7 +93,7 @@ prog = libbpf.bpf_object__find_program_by_name(obj, PROGRAM_NAME)
 if not prog:
     raise RuntimeError("Program not found")
 
-link = libbpf.bpf_program__attach(prog)
+link = libbpf.bpf_program__attach_lsm(prog)
 if not link:
     raise RuntimeError("Attach failed")
 

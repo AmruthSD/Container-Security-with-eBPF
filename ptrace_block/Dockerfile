@@ -2,4 +2,4 @@ FROM scratch
 
 COPY hello /
 
-CMD ["/hello"]
+ENTRYPOINT ["/hello"]

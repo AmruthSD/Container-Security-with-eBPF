@@ -1,6 +1,7 @@
-#include <linux/nsproxy.h>
-#include <linux/pid_namespace.h>
 #include "vmlinux.h"
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
+#include <bpf/bpf_core_read.h>
 
 struct
 {
@@ -22,17 +23,28 @@ int BPF_PROG(block_ptrace, struct task_struct *child, unsigned int mode)
     if (!enabled)
         return 0;
 
-    __u64 target_cgid = bpf_task_get_cgroup_id(child, 0);
+    bpf_printk("Container with cgid=%llu",current_cgid);
 
-    if (current_cgid != target_cgid)
+    // CO-RE safe read of child's cgroup id
+    __u64 target_cgid = BPF_CORE_READ(child, cgroups, dfl_cgrp, kn, id);
+
+    // block cross-cgroup ptrace
+    if (current_cgid != target_cgid){
+        bpf_printk("Blocking cause invalid cgroups");
         return -1;
+    }
 
     // PID namespace check
-    struct pid_namespace *curr_ns = current_task->nsproxy->pid_ns_for_children;
-    struct pid_namespace *target_ns = child->nsproxy->pid_ns_for_children;
+    struct pid_namespace *curr_ns = BPF_CORE_READ(current_task, nsproxy, pid_ns_for_children);
+    struct pid_namespace *target_ns = BPF_CORE_READ(child, nsproxy, pid_ns_for_children);
 
-    if (curr_ns != target_ns)
+    if (curr_ns != target_ns){
+        bpf_printk("Blocking cause invalid namespace");
         return -1;
+    }
 
+    bpf_printk("Allowed as same cgid and pns");
     return 0;
 }
+
+char LICENSE[] SEC("license") = "GPL";

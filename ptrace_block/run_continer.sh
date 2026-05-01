@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+ARGSIN=$1 
+
 IMAGE=hello-scratch
 
 echo "[+] Building binaries..."
@@ -17,7 +19,10 @@ echo "[+] Running container..."
 docker run --rm \
   --pid=host \
   --cap-add=SYS_PTRACE \
+  --privileged \
+  --userns=host \
+  --security-opt apparmor=unconfined \
   --security-opt seccomp=unconfined \
-  ${IMAGE}
+  ${IMAGE} ${ARGSIN}
 
 echo "[✓] Done"
