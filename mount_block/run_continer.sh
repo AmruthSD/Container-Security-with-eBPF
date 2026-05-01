@@ -14,6 +14,12 @@ echo "[+] Building Docker image..."
 docker build -t ${IMAGE} .
 
 echo "[+] Running container..."
-docker run --rm --name test-scratch ${IMAGE}
+docker run --rm -it \
+  --pid=host \
+  --cap-add=SYS_ADMIN \
+  --privileged \
+  --security-opt apparmor=unconfined \
+  --security-opt seccomp=unconfined \
+  ${IMAGE}
 
 echo "[✓] Done"

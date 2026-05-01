@@ -10,7 +10,7 @@
 void attempt_ptrace(pid_t target) {
     std::cout << "\n[*] Attempting to ptrace attach to PID: " << target << "\n";
 
-    if (ptrace(PTRACE_ATTACH, target, nullptr, nullptr)!=0) {
+    if (ptrace(PTRACE_ATTACH, target, nullptr, nullptr)==-1) {
         std::cerr << "[!] ptrace failed: " << strerror(errno) << "\n";
 
         if (errno == EPERM) {
