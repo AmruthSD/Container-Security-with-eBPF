@@ -1,0 +1,36 @@
+#include "vmlinux.h"
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
+
+#define EPERM 1
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 1024);
+    __type(key, __u64);
+    __type(value, __u8);
+} cgroup_filter SEC(".maps");
+
+static __always_inline int is_container(void)
+{
+    __u64 cgid = bpf_get_current_cgroup_id();
+    __u8 *val = bpf_map_lookup_elem(&cgroup_filter, &cgid);
+    if (val && *val)
+        return 1;
+    return 0;
+}
+
+SEC("lsm/task_fix_setuid")
+int BPF_PROG(block_setuid,
+             struct cred *new,
+             const struct cred *old,
+             int flags)
+{
+    if (!is_container())
+        return 0;
+
+    bpf_printk("BLOCK: setuid attempt\n");
+    return -EPERM;
+}
+
+char LICENSE[] SEC("license") = "GPL";
